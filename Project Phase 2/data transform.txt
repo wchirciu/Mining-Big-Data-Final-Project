@@ -1,0 +1,100 @@
+DATA TRANSFORMATION
+
+HADOOP STREAMING:
+
+#! /usr/bin/python
+import sys
+
+for line in sys.stdin:
+
+	line = line.strip()
+	split = line.split('|')
+	
+	iterList = split
+	index = 0
+	for vals in iterList:
+		if vals.startswith('MFGR'):
+			mfgr_num = vals.split('#')[1]
+
+			while len(mfgr_num) < 4:
+				mfgr_num = "0" + mfgr_num
+
+			split[index] = "MFGR#" + mfgr_num
+		index = index + 1
+
+	print ','.join(split)
+	 
+
+
+
+
+HIVE:
+
+#! /usr/bin/python
+import sys
+
+for line in sys.stdin:
+
+	line = line.strip()
+	split = line.split('\t')
+	
+	iterList = split
+	index = 0
+	for vals in iterList:
+		if vals.startswith('MFGR'):
+			mfgr_num = vals.split('#')[1]
+
+			while len(mfgr_num) < 4:
+				mfgr_num = "0" + mfgr_num
+
+			split[index] = "MFGR#" + mfgr_num
+
+		index = index + 1
+
+	print '\t'.join(split)
+
+
+
+CREATE TABLE Part(
+p_partkey INT, p_name STRING,
+p_mfgr STRING, p_category STRING,
+p_brand1 STRING, p_color STRING,
+p_type STRING, p_size INT,
+p_container STRING)
+ROW FORMAT DELIMITED FIELDS
+TERMINATED BY '|' STORED AS TEXTFILE;
+
+LOAD DATA LOCAL INPATH '/home/ec2-user/part.tbl'
+OVERWRITE INTO TABLE Part;
+
+CREATE TABLE Part_new(
+p_partkey INT, p_name STRING,
+p_mfgr STRING, p_category STRING,
+p_brand1 STRING, p_color STRING,
+p_type STRING, p_size INT,
+p_container STRING)
+ROW FORMAT DELIMITED FIELDS
+TERMINATED BY '\t' STORED AS TEXTFILE;
+
+add FILE /home/ec2-user/transform_hive.py;
+
+INSERT OVERWRITE TABLE Part_new
+SELECT TRANSFORM(p_partkey,p_name,p_mfgr,p_category,p_brand1,p_color,p_type,p_size,p_container)
+USING 'python transform_hive.py'
+AS (p_partkey,p_name,p_mfgr,p_category,p_brand1,p_color,p_type,p_size,p_container) FROM part;
+
+INSERT OVERWRITE DIRECTORY '/data/HivePartTransform'
+ROW FORMAT DELIMITED FIELDS TERMINATED BY ','
+SELECT * FROM Part_new;
+
+
+
+
+PIG:
+
+part = LOAD '/data/part.tbl' USING PigStorage('|')
+AS (
+p_partkey:int,p_name:chararray,p_mfgr:chararray,p_category:chararray,
+p_brand1:chararray,p_color:chararray,p_type:chararray,p_size:int,p_container:chararray);
+
+STORE part INTO '/data/pig_Output' using PigStorage(','); 

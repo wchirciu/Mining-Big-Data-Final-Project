@@ -1,0 +1,196 @@
+
+#JOIN LINEORDER AND CUSTOMER TABLES
+
+MAPPER
+
+#! /usr/bin/python
+import sys
+
+for line in sys.stdin:
+	
+	line = line.strip()
+	split = line.split('|')
+	
+	if "Customer" in split[1]:
+		if split[5] == "AMERICA":
+			outputCust = [split[0],split[4], 'Customer']
+			print '\t'.join(outputCust)
+
+	else:
+		outputLine = [split[2],split[5],split[12], 'Lineorder']
+		print '\t'.join(outputLine)
+
+
+REDUCER
+
+#! /usr/bin/python
+import sys
+
+currentKey = None
+Customer = None
+Lineorder = None
+
+for line in sys.stdin:
+
+	line = line.strip()
+	split = line.split('\t')
+	key = split[0]
+	value = '\t'.join(split[1:-1])
+
+	if currentKey == key:   #same key
+		if split[-1] == 'Customer':
+			Customer.append(value)
+		if split[-1] == 'Lineorder':
+			Lineorder.append(value)
+	else:
+		if currentKey:
+			for customer in Customer:
+				for lineorder in Lineorder:
+					print currentKey, '\t', customer, '\t', lineorder
+		currentKey = key
+		if split[-1] == 'Customer':
+			Customer = [value]
+			Lineorder = []
+		if split[-1] == 'Lineorder':
+			Customer = []
+			Lineorder = [value]
+for customer in Customer:
+	for lineorder in Lineorder:
+		print currentKey, '\t', customer, '\t', lineorder
+
+
+# JOIN LINECUST AND DWDATE TABLES
+
+#MAPPER
+
+#! /usr/bin/python
+import sys
+
+for line in sys.stdin:
+	
+	line = line.strip()
+
+	if line.count('|') == 17:
+		split = line.split('|')
+		if split[4] == "1997":
+			print split[0] + '\t' + split[4] + '\t' + 'Date'
+	else:
+		split = line.split('\t')
+		print split[2] + '\t' + split[1] + '\t' + split[3] + '\t' + 'CjL'
+
+#REDUCER
+
+#! usr/bin/python
+import sys
+
+currentKey = None
+CjL = None
+Date = None
+
+for line in sys.stdin:
+
+	split = line.strip().split('\t')
+	key = split[0]
+	value = '\t'.join(split[1:-1])
+
+	if currentKey == key:
+		if split[-1] == 'CjL':
+			CjL.append(value)
+		if split[-1] == 'Date':
+			Date.append(value)
+	else:
+		if currentKey:
+			for cjl in CjL:
+				for date in Date:
+					print currentKey + '\t' + cjl + '\t' + date
+		currentKey = key
+		if split[-1] == 'CjL':
+			CjL = [value]
+			Date = []
+		if split[-1] == 'Date':
+			CjL = []
+			Date = [value]
+
+for cjl in CjL:
+	for date in Date:
+		print currentKey + '\t' + cjl + '\t' + date
+
+
+
+#MAPPER GROUP BY
+
+#!/usr/bin/python
+import sys
+
+for line in sys.stdin:
+	
+	line = line.strip()
+	split = line.split('\t')
+	key = ','.join([split[3],split[1]])
+
+	print key + '\t' + split[2]
+
+#REDUCER
+
+#!/usr/bin/python
+import sys
+
+currentKey = None
+sum = 0
+
+for line in sys.stdin:
+
+	split = line.strip().split('\t')
+	key = split[0]
+	value = int(split[1])
+
+	if currentKey == key:
+		sum = sum + value
+	
+	else:
+		if currentKey:
+			select = currentKey.split(',')
+			print 	select[0] + '\t' + select[1] + '\t' + str(sum)
+		currentKey = key
+		sum = sum + value
+
+select = currentKey.split(',')
+print 	select[0] + '\t' + select[1] + '\t' + str(sum)
+
+
+
+
+
+
+PIG
+
+lineorder = LOAD '/data/in1/lineorder.tbl' USING PigStorage('|')
+AS (
+lo_orderkey:int,lo_linenumber:int,lo_custkey:int,lo_partkey:int,
+lo_suppkey:int,lo_orderdate:int,lo_orderpriority:chararray,
+lo_shippriority:chararray,lo_quantity:int,lo_extendedprice:int,
+lo_ordertotalprice:int,lo_discount:int,lo_revenue:int,lo_supplycost:int,
+lo_tax:int,lo_commitdate:int,lo_shipmode:chararray);
+
+customer = LOAD '/data/in1/customer.tbl' USING PigStorage('|')
+AS (
+c_custkey:int,c_name:chararray,c_address:chararray,c_city:chararray,
+c_nation:chararray,c_region:chararray,c_phone:chararray,c_mktsegment:chararray);
+
+dwdate = LOAD '/data/in2/dwdate.tbl' USING PigStorage('|')
+AS (
+d_datekey:int,d_date:chararray,d_dayofweek:chararray,d_month:chararray,
+d_year:int,d_yearmonthnum:int,d_yearmonth:chararray,d_daynuminweek:int,
+d_daynuminmonth:int,d_daynuminyear:int,d_monthnuminyear:int,d_weeknuminyear:int,
+d_sellingseason:chararray,d_lastdayinweekfl:chararray,
+d_lastdayinmonthfl:chararray,d_holidayfl:chararray,d_weekdayfl:chararray);
+
+filter_customer = FILTER customer BY c_region == 'AMERICA';
+filter_dwdate = FILTER dwdate BY d_year == 1997;
+cjl = JOIN filter_customer BY c_custkey, lineorder BY lo_custkey;
+cjl_join_dwdate = JOIN filter_dwdate BY d_datekey, cjl BY lo_orderdate;
+grouped = GROUP cjl_join_dwdate BY (d_year,c_nation);
+summation = FOREACH grouped GENERATE FLATTEN(group) AS (d_year,c_nation),SUM(cjl_join_dwdate.lo_revenue) as sm;
+result = FOREACH summation GENERATE d_year,c_nation,sm;
+DUMP result;
+
